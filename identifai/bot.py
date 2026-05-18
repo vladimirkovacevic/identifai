@@ -83,14 +83,25 @@ def _make_photo_handler(cfg: Config, counter: _DailyCounter):
             return
 
         t_start = time.monotonic()
+        logger.info("photo received user_id=%s msg_id=%s", user.id, update.message.message_id)
+
         await update.message.reply_text(_PLACEHOLDER_SR)
         t_after_ack = time.monotonic()
+        logger.info("placeholder sent ack_ms=%d", _ms(t_start, t_after_ack))
 
         photo = update.message.photo[-1]
         tg_file = await photo.get_file()
         img_bytes = bytes(await tg_file.download_as_bytearray())
         t_after_dl = time.monotonic()
+        logger.info(
+            "photo downloaded bytes=%d download_ms=%d",
+            len(img_bytes), _ms(t_after_ack, t_after_dl),
+        )
 
+        logger.info(
+            "calling claude -p model=%s search=%s",
+            cfg.model, cfg.use_web_search,
+        )
         try:
             reply = await asyncio.get_running_loop().run_in_executor(
                 None,
@@ -103,7 +114,7 @@ def _make_photo_handler(cfg: Config, counter: _DailyCounter):
             )
         except IdentifyError as e:
             t_err = time.monotonic()
-            logger.exception(
+            logger.error(
                 "result=error user_id=%s bytes=%d "
                 "ack_ms=%d download_ms=%d identify_ms=%d total_ms=%d err=%s",
                 user.id, len(img_bytes),
@@ -113,9 +124,14 @@ def _make_photo_handler(cfg: Config, counter: _DailyCounter):
             await update.message.reply_text(_ERROR_SR)
             return
         t_after_id = time.monotonic()
+        logger.info(
+            "claude reply received chars=%d identify_ms=%d",
+            len(reply), _ms(t_after_dl, t_after_id),
+        )
 
         await update.message.reply_text(reply)
         t_after_send = time.monotonic()
+        logger.info("reply sent to Telegram send_ms=%d", _ms(t_after_id, t_after_send))
 
         _save_reply(reply, cfg.responses_dir)
         t_after_save = time.monotonic()

@@ -24,6 +24,10 @@ def _setup_logging() -> None:
     root.setLevel(logging.INFO)
     root.addHandler(file_h)
     root.addHandler(stream_h)
+    # Silence the long-poll HTTP and telegram-internal chatter so the
+    # daemon's own progress lines are easy to read.
+    for noisy in ("httpx", "httpcore", "telegram", "telegram.ext"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def main() -> None:
