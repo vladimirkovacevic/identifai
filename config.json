@@ -1,6 +1,7 @@
 {
   "model": "claude-sonnet-4-6",
   "use_web_search": true,
+  "language": "Serbian (latinica)",
   "daily_image_limit": 50,
   "claude_bin": "claude",
   "responses_dir": "./responses",

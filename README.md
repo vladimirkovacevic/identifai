@@ -1,12 +1,17 @@
 # identifAI
 
 Local daemon: send a photo from your iPhone Telegram to a private bot
-and get back a Serbian-language identification (plant, animal, object,
-landmark). Vision + web search are handled by the local `claude` CLI in
-headless mode, so calls draw from your Claude Code subscription — no
-Anthropic API key required.
+and get back an identification (plant, animal, object, landmark) in
+the language you choose (Serbian by default). Vision + web search are
+handled by the local `claude` CLI in headless mode, so calls draw from
+your Claude Code subscription — no Anthropic API key required.
 
 See [PLAN.md](PLAN.md) for the design.
+
+**Co-built with Claude.** The implementation was paired iteratively
+with Claude Code (Opus 4.7); the design intent, requirements, and the
+"use the Claude Code CLI instead of the SDK" architectural call are
+the human author's.
 
 ---
 
@@ -93,6 +98,7 @@ Both are required. Nothing else belongs here.
 |---|---|---|
 | `model` | `claude-sonnet-4-6` | Use `claude-opus-4-7` for tougher subjects (slower, pricier in credits); `claude-haiku-4-5-20251001` to favour speed |
 | `use_web_search` | `true` | **Set `false` to skip web search** — drops typical response from ~30 s to ~6 s, loses citations |
+| `language` | `"Serbian (latinica)"` | Free-form. Whatever you put here is passed verbatim to the model: `"English"`, `"German"`, `"Italian"`, `"Spanish"`, etc. Affects Claude's replies only — the bot's own messages (placeholder, error, help, rejection) remain Serbian for now. |
 | `daily_image_limit` | `50` | Resets at UTC midnight (in-memory) |
 | `claude_bin` | `"claude"` | Absolute path if `claude` not on PATH |
 | `responses_dir` | `"./responses"` | Where `reply.txt` files are saved |

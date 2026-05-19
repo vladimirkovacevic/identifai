@@ -17,6 +17,7 @@ CONFIG_JSON = PROJECT_ROOT / "config.json"
 _DEFAULTS: dict[str, object] = {
     "model": "claude-sonnet-4-6",
     "use_web_search": True,
+    "language": "Serbian (latinica)",
     "daily_image_limit": 50,
     "claude_bin": "claude",
     "responses_dir": "./responses",
@@ -31,6 +32,7 @@ class Config:
     daily_image_limit: int
     model: str
     use_web_search: bool
+    language: str
     claude_bin: str
     responses_dir: Path
     claude_timeout_seconds: int
@@ -118,6 +120,7 @@ def load() -> Config:
         daily_image_limit=int(_resolve("daily_image_limit", js)),
         model=str(_resolve("model", js)).strip(),
         use_web_search=_as_bool(_resolve("use_web_search", js)),
+        language=str(_resolve("language", js)).strip(),
         claude_bin=str(_resolve("claude_bin", js)).strip(),
         responses_dir=Path(str(_resolve("responses_dir", js))).resolve(),
         claude_timeout_seconds=int(_resolve("claude_timeout_seconds", js)),

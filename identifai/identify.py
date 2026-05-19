@@ -9,15 +9,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_RULES_FULL_SR = (
-    "Identifikuj glavni subjekat na slici (npr. biljka, životinja, predmet, spomenik). "
-    "Daj srpski naziv (latinica) i latinski naziv ako postoji. "
-    "Dodaj 2-4 kratke činjenice (stanište, jestivost/otrovnost, briga, itd.). "
-    "Odgovori isključivo na srpskom (latinica), najviše ~150 reči. "
-    "Ako nisi siguran, jasno napiši: \"nisam siguran\". "
-    "Ne izmišljaj činjenice."
-)
-
 _QUICK_TAG = "__SUBJECT__:"
 _SUBJECT_LINE_RE = re.compile(rf"^{re.escape(_QUICK_TAG)}\s*(.+?)\s*$", re.MULTILINE)
 
@@ -51,8 +42,7 @@ def _run_claude(
     return reply
 
 
-def _with_tmp_image(image_bytes: bytes, suffix: str):
-    """Write image to a temp file under XDG_RUNTIME_DIR; caller is responsible for cleanup."""
+def _with_tmp_image(image_bytes: bytes, suffix: str) -> Path:
     runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "identifAI"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     fd, tmp_path_str = tempfile.mkstemp(prefix="img-", suffix=suffix, dir=runtime_dir)
@@ -66,23 +56,29 @@ def identify(
     *,
     claude_bin: str,
     model: str,
+    language: str,
     timeout_seconds: int,
     suffix: str = ".jpg",
 ) -> str:
     """Single-call vision-only identification.
 
-    Used when use_web_search is disabled. Returns one Serbian message with
-    name + 2-4 facts. No sources.
+    Used when use_web_search is disabled. Returns one message in `language`
+    with name + 2-4 facts. No sources.
     """
     tmp = _with_tmp_image(image_bytes, suffix)
     try:
-        prompt = f"Pročitaj sliku na putanji: {tmp}\n\n{_RULES_FULL_SR}"
+        prompt = (
+            f"Read the image at: {tmp}\n\n"
+            "Identify the primary subject (e.g. plant, animal, object, landmark). "
+            f"Give the common name and the latin name if applicable. "
+            "Add 2-4 short, useful facts (habitat, edibility/toxicity, care, history — "
+            "whatever fits the subject). "
+            f"Reply ONLY in {language}, at most ~150 words. "
+            "If you are not certain, say so plainly in the reply — do not invent facts."
+        )
         return _run_claude(
-            claude_bin=claude_bin,
-            model=model,
-            allowed_tools="Read",
-            prompt=prompt,
-            timeout_seconds=timeout_seconds,
+            claude_bin=claude_bin, model=model, allowed_tools="Read",
+            prompt=prompt, timeout_seconds=timeout_seconds,
         )
     finally:
         try:
@@ -96,34 +92,32 @@ def identify_quick(
     *,
     claude_bin: str,
     model: str,
+    language: str,
     timeout_seconds: int,
     suffix: str = ".jpg",
 ) -> tuple[str, str | None]:
     """Two-stage step 1: fast vision-only identification.
 
-    Returns (user_facing_text, subject_for_search_or_None).
-    The user_facing_text is what we send to Telegram; subject is the
-    string passed to `search_facts` in stage 2 (None if uncertain).
+    Returns (user_facing_text, subject_for_search_or_None). The text is
+    in `language`; the subject (latin name) is plain ASCII for searching.
     """
     tmp = _with_tmp_image(image_bytes, suffix)
     try:
         prompt = (
-            f"Pročitaj sliku na putanji: {tmp}\n\n"
-            "Identifikuj glavni subjekat. Odgovori u dva dela:\n"
-            "1) Kratak srpski opis (latinica), 1-2 rečenice. Spomeni srpski "
-            "i latinski naziv ako postoji. Bez izvora i bez markdown formatiranja.\n"
-            "2) Na samoj poslednjoj liniji, BEZ ikakve dekoracije, napiši:\n"
-            f"   {_QUICK_TAG} <Latinski naziv ili NEPOZNATO>\n\n"
-            f"Ne dodaj ništa nakon {_QUICK_TAG} linije. "
-            "Ako nisi siguran u identifikaciju, napiši \"nisam siguran\" u "
-            f"opisu i NEPOZNATO posle {_QUICK_TAG}."
+            f"Read the image at: {tmp}\n\n"
+            "Identify the primary subject. Reply in two parts:\n"
+            f"1) A brief description in {language}, 1-2 sentences. Mention the "
+            "common name in that language and the latin name if applicable. "
+            "No sources, no markdown formatting.\n"
+            "2) On the very last line, with no decoration, write:\n"
+            f"   {_QUICK_TAG} <Latin name, or UNKNOWN>\n\n"
+            f"Do not add anything after the {_QUICK_TAG} line. "
+            f"If you are not sure of the identification, say so in {language} "
+            f"in the description and write UNKNOWN after {_QUICK_TAG}."
         )
         raw = _run_claude(
-            claude_bin=claude_bin,
-            model=model,
-            allowed_tools="Read",
-            prompt=prompt,
-            timeout_seconds=timeout_seconds,
+            claude_bin=claude_bin, model=model, allowed_tools="Read",
+            prompt=prompt, timeout_seconds=timeout_seconds,
         )
         return _parse_quick(raw)
     finally:
@@ -138,11 +132,10 @@ def _parse_quick(raw: str) -> tuple[str, str | None]:
     subject: str | None = None
     if m:
         candidate = m.group(1).strip()
-        if candidate and candidate.upper() != "NEPOZNATO":
+        if candidate and candidate.upper() not in ("UNKNOWN", "NEPOZNATO"):
             subject = candidate
         user_text = raw[: m.start()].rstrip()
     else:
-        # Model didn't follow the format; fall back to showing whole reply.
         logger.warning("identify_quick: %s line missing; falling back", _QUICK_TAG)
         user_text = raw.strip()
     if not user_text:
@@ -157,6 +150,7 @@ def deep_check(
     quick_summary: str,
     claude_bin: str,
     model: str,
+    language: str,
     timeout_seconds: int,
     suffix: str = ".jpg",
 ) -> str:
@@ -165,38 +159,37 @@ def deep_check(
     The model gets the image again (`Read`) plus stage 1's identification
     as context, runs `WebSearch` against authoritative sources, and is
     asked to either confirm the stage 1 ID or flag an inconsistency.
-    Returns Serbian text with a sources line.
+    Reply is in `language`.
     """
     tmp = _with_tmp_image(image_bytes, suffix)
     try:
-        seed = subject or "(stage 1 nije bio siguran)"
+        seed = subject or "(stage 1 was not sure)"
         prompt = (
-            f"Pročitaj sliku na putanji: {tmp}\n\n"
-            f"Stage 1 (samo vizuelno) je identifikovao: \"{seed}\".\n"
-            f"Stage 1 opis: {quick_summary}\n\n"
-            "Tvoj zadatak:\n"
-            "1) Pogledaj sliku i pretraži web koristeći najpouzdanije izvore "
-            "   (Wikipedia, akademski sajtovi, etablirane baze podataka). "
-            "   Sakupi top rezultate.\n"
-            "2) Proveri konzistentnost: da li to što web kaže odgovara onome "
-            "   što vidiš na slici? Ako se ne slaže sa Stage 1 identifikacijom, "
-            "   jasno napomeni: \"Napomena: pretraga i slika ukazuju na ... "
-            "   umesto Stage 1 identifikacije ...\".\n"
-            "3) Prikupi 3-5 dodatnih, zanimljivih činjenica (stanište, "
-            "   jestivost/otrovnost, briga, istorija, kuriozitet). Ne ponavljaj "
-            "   sadržaj iz Stage 1 opisa.\n"
-            "4) Odgovori isključivo na srpskom (latinica), do 180 reči.\n"
-            "5) Na samoj poslednjoj liniji navedi izvore u formatu:\n"
-            "   \"Izvori: <url1>; <url2>; <url3>\".\n\n"
-            "Ako pretraga ne vrati pouzdane rezultate, napiši: "
-            "\"Nisam pronašao dodatne pouzdane informacije.\" — bez izmišljanja."
+            f"Read the image at: {tmp}\n\n"
+            f"Stage 1 (vision only) identified: \"{seed}\".\n"
+            f"Stage 1 description: {quick_summary}\n\n"
+            "Your task:\n"
+            "1) Look at the image and search the web using the most reliable "
+            "   sources (Wikipedia, academic sites, established databases). "
+            "   Gather the top results.\n"
+            "2) Check consistency: does what the web says match what you see "
+            "   in the image? If it disagrees with Stage 1, clearly flag it "
+            f"   in {language} (e.g. natural-language equivalent of "
+            "   \"Note: search and image suggest this is X rather than Y\").\n"
+            "3) Collect 3-5 additional interesting facts (habitat, edibility, "
+            "   care, history, curiosities). Do not repeat content from the "
+            "   Stage 1 description.\n"
+            f"4) Reply ONLY in {language}, at most 180 words.\n"
+            "5) On the very last line, list sources prefixed with the natural "
+            f"   word for \"Sources\" in {language} (e.g. \"Izvori:\" for "
+            "   Serbian, \"Sources:\" for English), then the URLs separated "
+            "   by \"; \".\n\n"
+            "If the search does not return reliable results, say so plainly "
+            f"in {language} — do not invent."
         )
         return _run_claude(
-            claude_bin=claude_bin,
-            model=model,
-            allowed_tools="Read,WebSearch",
-            prompt=prompt,
-            timeout_seconds=timeout_seconds,
+            claude_bin=claude_bin, model=model, allowed_tools="Read,WebSearch",
+            prompt=prompt, timeout_seconds=timeout_seconds,
         )
     finally:
         try:

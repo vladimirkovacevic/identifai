@@ -1,8 +1,9 @@
 [project]
 name = "identifai"
 version = "0.1.0"
-description = "Telegram bot daemon: identify images via headless Claude Code, reply in Serbian."
+description = "Telegram bot daemon: identify images via headless Claude Code, reply in the configured language (Serbian by default)."
 requires-python = ">=3.11"
+license = {file = "LICENSE"}
 dependencies = [
     "python-telegram-bot>=21.0,<22",
     "python-dotenv>=1.0.0",
