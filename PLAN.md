@@ -15,7 +15,12 @@ identifying what is in the photo (plant, object, animal, landmark…).
      Claude vision identifies the subject, Claude's built-in
      `web_search` tool fetches authoritative pages, Claude summarizes in
      Serbian and cites sources. Better for obscure species, regional
-     names, toxicity/edibility warnings, current info.
+     names, toxicity/edibility warnings, current info. When web_search 
+     is on give to the user as soon as posible response summary from claude 
+     and then, in the next message add additional results/conclusions/fun facts
+     and  references from web search. Perform this web search also with the
+     image and collect top, most reliable results and combine with what claude 
+     previously gave to also check consistency.
 
    Use **B** by default, but make possible to easily switch to A.
 
