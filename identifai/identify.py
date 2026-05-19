@@ -8,8 +8,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT_SECONDS = 90
-
 _RULES_SR = (
     "Identifikuj glavni subjekat na slici (npr. biljka, životinja, predmet, spomenik). "
     "Daj srpski naziv (latinica) i latinski naziv ako postoji. "
@@ -35,6 +33,7 @@ def identify(
     claude_bin: str,
     model: str,
     use_web_search: bool,
+    timeout_seconds: int,
     suffix: str = ".jpg",
 ) -> str:
     """Run `claude -p` on the image and return the reply text."""
@@ -68,7 +67,7 @@ def identify(
             cmd,
             capture_output=True,
             text=True,
-            timeout=_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
         if proc.returncode != 0:
             logger.error(

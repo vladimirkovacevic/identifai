@@ -72,17 +72,35 @@ itself is never persisted.
 
 ---
 
-## Configuration reference (`~/.config/identifAI/.env`)
+## Configuration
+
+Settings live in two places — secrets in `.env`, everything else in
+`config.json`. Precedence (highest wins): **env var → config.json →
+built-in default**.
+
+### Secrets — `~/.config/identifAI/.env`
+
+| Key | Notes |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | From @BotFather |
+| `ALLOWED_TELEGRAM_USER_IDS` | Comma-separated numeric ids |
+
+Both are required. Nothing else belongs here.
+
+### Tunables — `config.json` (at project root)
 
 | Key | Default | Notes |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | — (required) | From @BotFather |
-| `ALLOWED_TELEGRAM_USER_IDS` | — (required) | Comma-separated numeric ids |
-| `DAILY_IMAGE_LIMIT` | `50` | Per-process counter, resets at UTC midnight |
-| `MODEL` | `claude-sonnet-4-6` | Set to `claude-opus-4-7` if accuracy is short |
-| `USE_WEB_SEARCH` | `true` | Set `false` for vision-only (faster, no citations) |
-| `CLAUDE_BIN` | `claude` | Absolute path if `claude` not on PATH (e.g. under systemd) |
-| `RESPONSES_DIR` | `./responses` | Where reply texts are saved |
+| `model` | `claude-sonnet-4-6` | Use `claude-opus-4-7` for tougher subjects (slower, pricier in credits); `claude-haiku-4-5-20251001` to favour speed |
+| `use_web_search` | `true` | **Set `false` to skip web search** — drops typical response from ~30 s to ~6 s, loses citations |
+| `daily_image_limit` | `50` | Resets at UTC midnight (in-memory) |
+| `claude_bin` | `"claude"` | Absolute path if `claude` not on PATH |
+| `responses_dir` | `"./responses"` | Where `reply.txt` files are saved |
+| `claude_timeout_seconds` | `90` | Max wall-clock for one `claude -p` call |
+
+Edit `config.json` directly, then `systemctl --user restart identifai`.
+For one-off overrides (e.g. under systemd) you can also set the same
+key UPPER_SNAKE in the environment — env wins.
 
 ---
 

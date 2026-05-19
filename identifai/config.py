@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +11,17 @@ from dotenv import load_dotenv
 
 CONFIG_DIR = Path.home() / ".config" / "identifAI"
 ENV_FILE = CONFIG_DIR / ".env"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_JSON = PROJECT_ROOT / "config.json"
+
+_DEFAULTS: dict[str, object] = {
+    "model": "claude-sonnet-4-6",
+    "use_web_search": True,
+    "daily_image_limit": 50,
+    "claude_bin": "claude",
+    "responses_dir": "./responses",
+    "claude_timeout_seconds": 90,
+}
 
 
 @dataclass(frozen=True)
@@ -21,6 +33,7 @@ class Config:
     use_web_search: bool
     claude_bin: str
     responses_dir: Path
+    claude_timeout_seconds: int
 
 
 def _die(msg: str) -> None:
@@ -40,7 +53,22 @@ def _parse_user_ids(raw: str) -> frozenset[int]:
         return frozenset(int(x.strip()) for x in raw.split(",") if x.strip())
     except ValueError:
         _die(f"ALLOWED_TELEGRAM_USER_IDS must be comma-separated integers, got: {raw!r}")
-        raise  # unreachable, satisfies type checker
+        raise  # unreachable
+
+
+def _load_json_config() -> dict:
+    if not CONFIG_JSON.exists():
+        return {}
+    try:
+        data = json.loads(CONFIG_JSON.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        _die(f"{CONFIG_JSON}: invalid JSON: {e}")
+    if not isinstance(data, dict):
+        _die(f"{CONFIG_JSON}: top-level value must be an object")
+    unknown = set(data) - set(_DEFAULTS)
+    if unknown:
+        _die(f"{CONFIG_JSON}: unknown keys: {sorted(unknown)}")
+    return data
 
 
 def _verify_claude(claude_bin: str) -> None:
@@ -60,19 +88,39 @@ def _verify_claude(claude_bin: str) -> None:
         _die(f"'{claude_bin} --version' timed out")
 
 
+def _resolve(key: str, js: dict) -> object:
+    """Precedence: env var > config.json > built-in default."""
+    env_v = os.environ.get(key.upper(), "").strip()
+    if env_v:
+        return env_v
+    if key in js:
+        return js[key]
+    return _DEFAULTS[key]
+
+
+def _as_bool(v: object) -> bool:
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "1", "yes", "on")
+
+
 def load() -> Config:
     load_dotenv(ENV_FILE, override=False)
+    js = _load_json_config()
+
     allowed = _parse_user_ids(_require("ALLOWED_TELEGRAM_USER_IDS"))
     if not allowed:
         _die("ALLOWED_TELEGRAM_USER_IDS is empty")
+
     cfg = Config(
         telegram_bot_token=_require("TELEGRAM_BOT_TOKEN"),
         allowed_user_ids=allowed,
-        daily_image_limit=int(os.environ.get("DAILY_IMAGE_LIMIT", "50")),
-        model=os.environ.get("MODEL", "claude-sonnet-4-6").strip(),
-        use_web_search=os.environ.get("USE_WEB_SEARCH", "true").strip().lower() == "true",
-        claude_bin=os.environ.get("CLAUDE_BIN", "claude").strip(),
-        responses_dir=Path(os.environ.get("RESPONSES_DIR", "./responses")).resolve(),
+        daily_image_limit=int(_resolve("daily_image_limit", js)),
+        model=str(_resolve("model", js)).strip(),
+        use_web_search=_as_bool(_resolve("use_web_search", js)),
+        claude_bin=str(_resolve("claude_bin", js)).strip(),
+        responses_dir=Path(str(_resolve("responses_dir", js))).resolve(),
+        claude_timeout_seconds=int(_resolve("claude_timeout_seconds", js)),
     )
     _verify_claude(cfg.claude_bin)
     cfg.responses_dir.mkdir(parents=True, exist_ok=True)

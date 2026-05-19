@@ -110,6 +110,7 @@ def _make_photo_handler(cfg: Config, counter: _DailyCounter):
                     claude_bin=cfg.claude_bin,
                     model=cfg.model,
                     use_web_search=cfg.use_web_search,
+                    timeout_seconds=cfg.claude_timeout_seconds,
                 ),
             )
         except IdentifyError as e:
